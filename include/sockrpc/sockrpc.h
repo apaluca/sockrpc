@@ -217,7 +217,7 @@ void sockrpc_server_register(sockrpc_server *server, const char *name, rpc_handl
  * - Returns silently on bind failure
  * - Returns silently on thread creation failure
  *
- * @note Register methods before starting server
+ * @note Register methods before or after server start
  * @note Existing socket file is removed before binding
  * @warning Ensure proper permissions for socket path
  *
