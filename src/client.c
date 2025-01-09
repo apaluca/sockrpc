@@ -128,33 +128,33 @@ sockrpc_client *sockrpc_client_create(const char *socket_path)
  */
 cJSON *sockrpc_client_call_sync(sockrpc_client *client, const char *method, cJSON *params)
 {
-    pthread_mutex_lock(&client->mutex);
-
+    // JSON operations outside the lock
     cJSON *request = cJSON_CreateObject();
     if (!request)
     {
-        cJSON_Delete(params); // Clean up params if request creation fails
-        pthread_mutex_unlock(&client->mutex);
+        cJSON_Delete(params);
         return NULL;
     }
 
     cJSON_AddStringToObject(request, "method", method);
-    cJSON_AddItemToObject(request, "params", params); // Takes ownership of params
+    cJSON_AddItemToObject(request, "params", params);
 
     char *request_str = cJSON_Print(request);
+    cJSON_Delete(request);
     if (!request_str)
     {
-        cJSON_Delete(request); // Will also delete params
-        pthread_mutex_unlock(&client->mutex);
         return NULL;
     }
 
+    // Only lock the socket operations
+    pthread_mutex_lock(&client->mutex);
+
     write(client->fd, request_str, strlen(request_str));
     free(request_str);
-    cJSON_Delete(request); // Will also delete params
 
     char buffer[BUFFER_SIZE];
     ssize_t n = read(client->fd, buffer, BUFFER_SIZE);
+
     pthread_mutex_unlock(&client->mutex);
 
     if (n <= 0)
