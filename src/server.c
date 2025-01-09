@@ -574,7 +574,10 @@ void sockrpc_server_destroy(sockrpc_server *server)
         pthread_join(server->worker_threads[i], NULL);
     }
 
-    pthread_mutex_lock(&server->mutex);
+    for (int i = 0; i < NUM_WORKERS; i++)
+    {
+        pthread_mutex_destroy(&server->workers[i].mutex);
+    }
 
     for (size_t i = 0; i < server->method_count; i++)
     {
@@ -585,8 +588,8 @@ void sockrpc_server_destroy(sockrpc_server *server)
 
     unlink(server->socket_path);
 
-    pthread_mutex_unlock(&server->mutex);
     pthread_mutex_destroy(&server->mutex);
+    pthread_mutex_destroy(&server->lb_mutex);
 
     free(server->socket_path);
     free(server);
