@@ -231,16 +231,25 @@ static void handle_client_request(sockrpc_server *server, worker_context *worker
     cJSON *params = cJSON_GetObjectItem(request, "params");
 
     cJSON *result = NULL;
+    rpc_handler found_handler = NULL;
+
+    // Find the handler while holding the lock
     pthread_mutex_lock(&server->mutex);
     for (size_t i = 0; i < server->method_count; i++)
     {
         if (strcmp(server->methods[i].name, method) == 0)
         {
-            result = server->methods[i].handler(params);
+            found_handler = server->methods[i].handler;
             break;
         }
     }
     pthread_mutex_unlock(&server->mutex);
+
+    // Execute handler outside the critical section
+    if (found_handler)
+    {
+        result = found_handler(params);
+    }
 
     if (result)
     {
