@@ -215,6 +215,138 @@ static void test_multiple_methods()
     printf("Multiple methods test passed\n");
 }
 
+// Handler for the first dynamically registered method
+static cJSON *multiply_handler(cJSON *params)
+{
+    int a = cJSON_GetArrayItem(params, 0)->valueint;
+    int b = cJSON_GetArrayItem(params, 1)->valueint;
+    return cJSON_CreateNumber(a * b);
+}
+
+// Handler for the second dynamically registered method
+static cJSON *divide_handler(cJSON *params)
+{
+    int a = cJSON_GetArrayItem(params, 0)->valueint;
+    int b = cJSON_GetArrayItem(params, 1)->valueint;
+    if (b == 0)
+    {
+        return NULL; // Error case: division by zero
+    }
+    return cJSON_CreateNumber(a / (double)b);
+}
+
+// Additional handlers for concurrent testing
+static cJSON *subtract_handler(cJSON *params)
+{
+    int a = cJSON_GetArrayItem(params, 0)->valueint;
+    int b = cJSON_GetArrayItem(params, 1)->valueint;
+    return cJSON_CreateNumber(a - b);
+}
+
+static cJSON *power_handler(cJSON *params)
+{
+    int base = cJSON_GetArrayItem(params, 0)->valueint;
+    int exp = cJSON_GetArrayItem(params, 1)->valueint;
+    int result = 1;
+    for (int i = 0; i < exp; i++)
+    {
+        result *= base;
+    }
+    return cJSON_CreateNumber(result);
+}
+
+// Callback for async operations during registration
+static void concurrent_callback(cJSON *result) {
+    if (result) {
+        char *str = cJSON_Print(result);
+        printf("Concurrent operation result: %s\n", str);
+        free(str);
+        cJSON_Delete(result);
+    }
+}
+
+// Test registering methods after server start
+static void test_dynamic_registration()
+{
+    printf("Testing dynamic method registration...\n");
+
+    // Start server with no methods
+    sockrpc_server *server = sockrpc_server_create("/tmp/test6.sock");
+    sockrpc_server_start(server);
+    usleep(100000); // Give server time to start
+
+    // Create multiple clients for concurrent operations
+    sockrpc_client *client1 = sockrpc_client_create("/tmp/test6.sock");
+    sockrpc_client *client2 = sockrpc_client_create("/tmp/test6.sock");
+    assert(client1 != NULL && client2 != NULL);
+
+    // Register first method
+    sockrpc_server_register(server, "multiply", multiply_handler);
+    usleep(50000);
+
+    // Start some async operations on client2
+    cJSON *params = cJSON_CreateArray();
+    cJSON_AddItemToArray(params, cJSON_CreateNumber(6));
+    cJSON_AddItemToArray(params, cJSON_CreateNumber(7));
+    sockrpc_client_call_async(client2, "multiply", cJSON_Duplicate(params, 1), concurrent_callback);
+
+    // Test the first method with client1
+    cJSON *result = sockrpc_client_call_sync(client1, "multiply", cJSON_Duplicate(params, 1));
+    assert(result != NULL);
+    assert(result->valuedouble == 42);
+    cJSON_Delete(result);
+
+    // Register second method while async operations are in progress
+    sockrpc_server_register(server, "divide", divide_handler);
+    usleep(20000);
+
+    // Register third method immediately after
+    sockrpc_server_register(server, "subtract", subtract_handler);
+    usleep(20000);
+
+    // Start more async operations
+    sockrpc_client_call_async(client2, "divide", cJSON_Duplicate(params, 1), concurrent_callback);
+
+    // Register fourth method during heavy concurrent operations
+    sockrpc_server_register(server, "power", power_handler);
+
+    // Test all methods to ensure they work together
+    // Test multiply
+    result = sockrpc_client_call_sync(client1, "multiply", cJSON_Duplicate(params, 1));
+    assert(result != NULL);
+    assert(result->valuedouble == 42);
+    cJSON_Delete(result);
+
+    // Test divide
+    cJSON_ReplaceItemInArray(params, 1, cJSON_CreateNumber(2));
+    result = sockrpc_client_call_sync(client1, "divide", cJSON_Duplicate(params, 1));
+    assert(result != NULL);
+    assert(result->valuedouble == 3.0);
+    cJSON_Delete(result);
+
+    // Test subtract
+    result = sockrpc_client_call_sync(client1, "subtract", cJSON_Duplicate(params, 1));
+    assert(result != NULL);
+    assert(result->valuedouble == 4.0);
+    cJSON_Delete(result);
+
+    // Test power
+    cJSON_ReplaceItemInArray(params, 0, cJSON_CreateNumber(2));
+    cJSON_ReplaceItemInArray(params, 1, cJSON_CreateNumber(3));
+    result = sockrpc_client_call_sync(client1, "power", params);
+    assert(result != NULL);
+    assert(result->valuedouble == 8.0);
+    cJSON_Delete(result);
+
+    // Allow time for async operations to complete
+    usleep(100000);
+
+    sockrpc_client_destroy(client1);
+    sockrpc_client_destroy(client2);
+    sockrpc_server_destroy(server);
+    printf("Dynamic method registration test passed\n");
+}
+
 int main()
 {
     // Ignore SIGPIPE to prevent crashes when writing to closed sockets
@@ -225,6 +357,7 @@ int main()
     test_sync_calls();
     test_async_calls();
     test_multiple_methods();
+    test_dynamic_registration();
 
     printf("\nAll tests passed successfully!\n");
     return 0;
