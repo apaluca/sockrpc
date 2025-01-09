@@ -65,7 +65,6 @@ struct async_call_data
     char *method;                    /**< Method name (owned) */
     cJSON *params;                   /**< Parameters (transferred) */
     void (*callback)(cJSON *result); /**< Result callback */
-    pthread_mutex_t mutex;           /**< Thread synchronization */
 };
 
 /**
@@ -200,7 +199,6 @@ static void *async_call_routine(void *arg)
 
     // Cleanup
     free(data->method);
-    pthread_mutex_destroy(&data->mutex);
     free(data);
 
     return NULL;
@@ -238,7 +236,6 @@ void sockrpc_client_call_async(sockrpc_client *client, const char *method, cJSON
     data->method = strdup(method);
     data->params = params;
     data->callback = callback;
-    pthread_mutex_init(&data->mutex, NULL); // Initialize the mutex
 
     pthread_t thread;
     pthread_create(&thread, NULL, async_call_routine, data);
